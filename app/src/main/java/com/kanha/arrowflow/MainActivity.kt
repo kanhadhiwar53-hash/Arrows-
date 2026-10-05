@@ -293,7 +293,7 @@ class GameView(
                     vibrate()
                     if (vm.complete()) {
                         complete = true
-                        vm.markCampaignComplete()
+                        if (!dailyMode) vm.markCampaignComplete()
                         if (!completionStarted) {
                             completionStarted = true
                             spawnConfetti()
