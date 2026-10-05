@@ -9,6 +9,17 @@ android {
         versionCode=2
         versionName="0.2.0"
     }
+    signingConfigs {
+        getByName("debug")
+    }
+    buildTypes {
+        getByName("release") {
+            // Test/distribution build: use Android's debug signing key so the APK
+            // is directly installable. A Play Store release should use a private
+            // production keystore instead.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
     compileOptions {
         sourceCompatibility=JavaVersion.VERSION_17
         targetCompatibility=JavaVersion.VERSION_17
