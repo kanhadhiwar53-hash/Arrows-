@@ -7,7 +7,7 @@ import android.view.View
 
 class HomeView(
     context: Context,
-    private val onPlay: () -> Unit,
+    private val onPlay: (Int) -> Unit,
     private val onDaily: () -> Unit
 ) : View(context) {
     private val save = SaveManager(context)
@@ -106,16 +106,13 @@ class HomeView(
             val row = ((e.y - 125f) / 68f).toInt()
             if (col in 0..3 && row >= 0) {
                 val level = row * columns + col + 1
-                if (level <= save.level) {
-                    save.level = level
-                    onPlay()
-                }
+                if (level <= save.level) onPlay(level)
             }
             return true
         }
 
         when {
-            e.y in 120f..238f -> onPlay()
+            e.y in 120f..238f -> onPlay(save.level)
             e.y in 258f..358f -> onDaily()
             e.y in 365f..435f -> { showingLevels = true; invalidate() }
             e.y in 465f..535f -> {
