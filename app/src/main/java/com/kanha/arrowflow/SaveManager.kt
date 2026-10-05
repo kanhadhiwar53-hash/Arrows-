@@ -37,6 +37,27 @@ class SaveManager(context: Context) {
         get() = p.getInt("daily_streak", 0)
         set(v) { p.edit().putInt("daily_streak", v).apply() }
 
+    var totalCompleted: Int
+        get() = p.getInt("total_completed", 0)
+        set(v) { p.edit().putInt("total_completed", v).apply() }
+
+    var bestStars: Int
+        get() = p.getInt("best_stars", 0)
+        set(v) { p.edit().putInt("best_stars", v).apply() }
+
+    var achievements: String
+        get() = p.getString("achievements", "") ?: ""
+        set(v) { p.edit().putString("achievements", v).apply() }
+
+    fun hasAchievement(id: String): Boolean =
+        achievements.split(",").any { it == id }
+
+    fun unlockAchievement(id: String) {
+        if (!hasAchievement(id)) {
+            achievements = listOf(achievements, id).filter { it.isNotBlank() }.joinToString(",")
+        }
+    }
+
     fun syncDaily(date: String) {
         if (dailyDate != date) {
             dailyDate = date
