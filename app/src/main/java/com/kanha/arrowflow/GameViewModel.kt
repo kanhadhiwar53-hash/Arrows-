@@ -2,9 +2,10 @@ package com.kanha.arrowflow
 
 class GameViewModel(
     private val save: SaveManager,
+    private val startingLevel: Int = save.level,
     puzzle: PuzzleState? = null
 ) {
-    var level = save.level
+    var level = startingLevel
     var coins = save.coins
     var moves = 0
     private var puzzleState = puzzle ?: PuzzleGenerator.level(level)
@@ -20,9 +21,13 @@ class GameViewModel(
     fun hint() = engine.hint()
     fun complete() = engine.complete()
 
+    fun markCampaignComplete() {
+        if (level >= save.level) save.level = level + 1
+    }
+
     fun next() {
         level++
-        save.level = level
+        markCampaignComplete()
         coins += 10
         save.coins = coins
         load(PuzzleGenerator.level(level))
