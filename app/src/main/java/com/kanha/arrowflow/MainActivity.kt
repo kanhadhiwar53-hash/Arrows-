@@ -294,6 +294,11 @@ class GameView(
                     if (vm.complete()) {
                         complete = true
                         if (!dailyMode) vm.markCampaignComplete()
+                        save.totalCompleted += 1
+                        if (vm.stars() > save.bestStars) save.bestStars = vm.stars()
+                        if (!dailyMode && vm.level >= 5) save.unlockAchievement("LEVEL_5")
+                        if (!dailyMode && vm.level >= 10) save.unlockAchievement("LEVEL_10")
+                        if (vm.stars() == 3) save.unlockAchievement("THREE_STARS")
                         if (!completionStarted) {
                             completionStarted = true
                             spawnConfetti()
