@@ -43,7 +43,8 @@ class HomeView(
         text(c, "Tap theme to switch", 194f, 504f, t.ink, 13f, false)
 
         text(c, "Coins " + save.coins, 28f, 555f, t.ink, 15f, true)
-        text(c, "Offline ready", 28f, 585f, t.ink, 14f, false)
+        text(c, "Completed " + save.totalCompleted + " • Best ★ " + save.bestStars, 28f, 585f, t.ink, 14f, false)
+        text(c, "Achievements " + save.achievements.split(",").count { it.isNotBlank() } + "/3", 28f, 610f, t.ink, 14f, false)
     }
 
     private fun drawLevels(c: Canvas, t: GameTheme) {
