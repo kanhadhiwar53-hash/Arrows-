@@ -9,12 +9,10 @@ import android.content.Context
 import android.os.VibrationEffect
 import android.os.Vibrator
 import kotlin.math.min
-import kotlin.math.max
 import kotlin.random.Random
 
 class MainActivity : Activity() {
     private var inGame = false
-    private var dailyMode = false
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -23,15 +21,19 @@ class MainActivity : Activity() {
 
     private fun showHome() {
         inGame = false
-        dailyMode = false
-        setContentView(HomeView(this, onPlay = { showGame(false) }, onDaily = { showGame(true) }))
+        setContentView(
+            HomeView(
+                this,
+                onPlay = { level -> showGame(level, false) },
+                onDaily = { showGame(0, true) }
+            )
+        )
     }
 
-    private fun showGame(daily: Boolean) {
+    private fun showGame(level: Int, daily: Boolean) {
         inGame = true
-        dailyMode = daily
         window.setBackgroundDrawable(ColorDrawable(Color.rgb(246, 247, 251)))
-        setContentView(GameView(this, daily))
+        setContentView(GameView(this, level, daily))
     }
 
     override fun onBackPressed() {
@@ -39,20 +41,25 @@ class MainActivity : Activity() {
     }
 }
 
-class GameView(private val ctx: Context, private val dailyMode: Boolean = false) : View(ctx) {
+class GameView(
+    private val ctx: Context,
+    private val startingLevel: Int,
+    private val dailyMode: Boolean = false
+) : View(ctx) {
     private val save = SaveManager(ctx)
     private val vm = GameViewModel(
         save,
+        if (dailyMode) save.level else startingLevel,
         if (dailyMode) DailyChallengeManager.puzzleForToday() else null
     )
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var boardTop = 0f
+    private var boardTop = 105f
     private var cell = 0f
     private var hintId: Int? = null
     private var complete = false
-    private var selectedId: Int? = null
-    private var selectedProgress = 1f
-    private var selectedStart = 0L
+    private var escapingArrow: ArrowPiece? = null
+    private var escapeProgress = 1f
+    private var escapeStart = 0L
     private var shakeUntil = 0L
     private var shakeX = 0f
     private var particles = mutableListOf<Particle>()
@@ -77,7 +84,8 @@ class GameView(private val ctx: Context, private val dailyMode: Boolean = false)
 
         val offset = shakeX
         text(c, if (dailyMode) "DAILY CHALLENGE" else "ARROW FLOW", 28f + offset, 36f, t.ink, 22f)
-        text(c, if (dailyMode) DailyChallengeManager.todayKey() else "Level " + vm.level, 28f + offset, 70f, t.ink, 16f)
+        text(c, if (dailyMode) DailyChallengeManager.todayKey() else "Level " + vm.level,
+            28f + offset, 70f, t.ink, 16f)
         text(c, "Coins " + vm.coins, width - 120f + offset, 45f, t.ink, 16f)
 
         val n = vm.size()
@@ -93,7 +101,9 @@ class GameView(private val ctx: Context, private val dailyMode: Boolean = false)
                 12f, 12f, paint
             )
         }
+
         vm.state().forEach { drawArrow(c, it, left, boardTop, t) }
+        escapingArrow?.let { drawEscapingArrow(c, it, left, boardTop, t) }
         drawParticles(c)
 
         button(c, 24f, height - 110f, 145f, 56f, "Undo", t)
@@ -113,12 +123,14 @@ class GameView(private val ctx: Context, private val dailyMode: Boolean = false)
 
     private fun updateAnimation() {
         val now = System.currentTimeMillis()
-        if (selectedId != null) {
-            val elapsed = (now - selectedStart).coerceAtLeast(0L)
-            selectedProgress = min(1f, elapsed / 180f)
-            if (selectedProgress >= 1f) selectedId = null
+
+        if (escapingArrow != null) {
+            val elapsed = (now - escapeStart).coerceAtLeast(0L)
+            escapeProgress = min(1f, elapsed / 180f)
+            if (escapeProgress >= 1f) escapingArrow = null
             postInvalidateOnAnimation()
         }
+
         if (shakeUntil > now) {
             val phase = (shakeUntil - now) / 180f
             shakeX = kotlin.math.sin((1f - phase) * 35f) * 8f * phase
@@ -139,23 +151,30 @@ class GameView(private val ctx: Context, private val dailyMode: Boolean = false)
     }
 
     private fun drawArrow(c: Canvas, a: ArrowPiece, l: Float, top: Float, t: GameTheme) {
-        val x = l + a.col * cell
-        val y = top + a.row * cell
-        val cx = x + cell / 2
-        val cy = y + cell / 2
+        drawArrowAt(c, a, l, top, t, 0f, 0f)
+    }
+
+    private fun drawEscapingArrow(c: Canvas, a: ArrowPiece, l: Float, top: Float, t: GameTheme) {
+        val distance = cell * .75f * escapeProgress
         var dx = 0f
         var dy = 0f
-
-        if (a.id == selectedId) {
-            val p = 1f - selectedProgress
-            when (a.direction) {
-                Direction.UP -> dy = -cell * .55f * p
-                Direction.DOWN -> dy = cell * .55f * p
-                Direction.LEFT -> dx = -cell * .55f * p
-                Direction.RIGHT -> dx = cell * .55f * p
-            }
+        when (a.direction) {
+            Direction.UP -> dy = -distance
+            Direction.DOWN -> dy = distance
+            Direction.LEFT -> dx = -distance
+            Direction.RIGHT -> dx = distance
         }
+        drawArrowAt(c, a, l, top, t, dx, dy)
+    }
 
+    private fun drawArrowAt(
+        c: Canvas, a: ArrowPiece, l: Float, top: Float, t: GameTheme,
+        dx: Float, dy: Float
+    ) {
+        val x = l + a.col * cell
+        val y = top + a.row * cell
+        val cx = x + cell / 2 + dx
+        val cy = y + cell / 2 + dy
         paint.color = when {
             a.id == hintId -> Color.rgb(245, 175, 45)
             a.state == ArrowState.BLOCKED -> Color.rgb(160, 166, 180)
@@ -163,28 +182,26 @@ class GameView(private val ctx: Context, private val dailyMode: Boolean = false)
         }
         val s = cell * .27f
         val p = Path()
-        val px = cx + dx
-        val py = cy + dy
         when (a.direction) {
             Direction.UP -> {
-                p.moveTo(px, py - s); p.lineTo(px + s, py); p.lineTo(px + s * .38f, py)
-                p.lineTo(px + s * .38f, py + s); p.lineTo(px - s * .38f, py + s)
-                p.lineTo(px - s * .38f, py); p.lineTo(px - s, py); p.close()
+                p.moveTo(cx, cy - s); p.lineTo(cx + s, cy); p.lineTo(cx + s * .38f, cy)
+                p.lineTo(cx + s * .38f, cy + s); p.lineTo(cx - s * .38f, cy + s)
+                p.lineTo(cx - s * .38f, cy); p.lineTo(cx - s, cy); p.close()
             }
             Direction.DOWN -> {
-                p.moveTo(px, py + s); p.lineTo(px + s, py); p.lineTo(px + s * .38f, py)
-                p.lineTo(px + s * .38f, py - s); p.lineTo(px - s * .38f, py - s)
-                p.lineTo(px - s * .38f, py); p.lineTo(px - s, py); p.close()
+                p.moveTo(cx, cy + s); p.lineTo(cx + s, cy); p.lineTo(cx + s * .38f, cy)
+                p.lineTo(cx + s * .38f, cy - s); p.lineTo(cx - s * .38f, cy - s)
+                p.lineTo(cx - s * .38f, cy); p.lineTo(cx - s, cy); p.close()
             }
             Direction.LEFT -> {
-                p.moveTo(px - s, py); p.lineTo(px, py - s); p.lineTo(px, py - s * .38f)
-                p.lineTo(px + s, py - s * .38f); p.lineTo(px + s, py + s * .38f)
-                p.lineTo(px, py + s * .38f); p.lineTo(px, py + s); p.close()
+                p.moveTo(cx - s, cy); p.lineTo(cx, cy - s); p.lineTo(cx, cy - s * .38f)
+                p.lineTo(cx + s, cy - s * .38f); p.lineTo(cx + s, cy + s * .38f)
+                p.lineTo(cx, cy + s * .38f); p.lineTo(cx, cy + s); p.close()
             }
             Direction.RIGHT -> {
-                p.moveTo(px + s, py); p.lineTo(px, py - s); p.lineTo(px, py - s * .38f)
-                p.lineTo(px - s, py - s * .38f); p.lineTo(px - s, py + s * .38f)
-                p.lineTo(px, py + s * .38f); p.lineTo(px, py + s); p.close()
+                p.moveTo(cx + s, cy); p.lineTo(cx, cy - s); p.lineTo(cx, cy - s * .38f)
+                p.lineTo(cx - s, cy - s * .38f); p.lineTo(cx - s, cy + s * .38f)
+                p.lineTo(cx, cy + s * .38f); p.lineTo(cx, cy + s); p.close()
             }
         }
         c.drawPath(p, paint)
@@ -238,6 +255,8 @@ class GameView(private val ctx: Context, private val dailyMode: Boolean = false)
             if (!dailyMode && y > height / 2f + 45f) {
                 vm.next()
                 complete = false
+                completionStarted = false
+                escapingArrow = null
                 particles.clear()
                 invalidate()
             }
@@ -248,7 +267,12 @@ class GameView(private val ctx: Context, private val dailyMode: Boolean = false)
             when {
                 x < 154f -> { vm.undo(); hintId = null }
                 x < 310f -> hintId = vm.hint()
-                else -> { vm.reset(); hintId = null; particles.clear() }
+                else -> {
+                    vm.reset()
+                    hintId = null
+                    escapingArrow = null
+                    particles.clear()
+                }
             }
             invalidate()
             return true
@@ -263,12 +287,13 @@ class GameView(private val ctx: Context, private val dailyMode: Boolean = false)
             if (a != null) {
                 hintId = null
                 if (vm.tap(a.id)) {
-                    selectedId = a.id
-                    selectedProgress = 0f
-                    selectedStart = System.currentTimeMillis()
+                    escapingArrow = a.copy(state = ArrowState.ESCAPING)
+                    escapeProgress = 0f
+                    escapeStart = System.currentTimeMillis()
                     vibrate()
                     if (vm.complete()) {
                         complete = true
+                        vm.markCampaignComplete()
                         if (!completionStarted) {
                             completionStarted = true
                             spawnConfetti()
